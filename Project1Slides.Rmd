@@ -1,0 +1,179 @@
+---
+title: "Project 1"
+author: "Maxim Averbukh"
+date: "11/7/2020"
+output: ioslides_presentation
+---
+<style type="text/css">body p, div, h1, h2, h3, h4, h5 {color:black;font-family:Modern Computer Roman;}slides>slide.title-slide hgroup h1 {color:#8C1D40; <!--the maroon color-->}h2 {color:#8C1D40; <!-- the maroon color-->}</style> <!--end of defining font in various parts of slides-->
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## What's the Problem?
+
+Samsung carried out an experiment with 30 volunteers. Participants were wearing a Samsung phone which recorder gyroscope and accelerometer data while participants completed 6 basic actions: Walking, walking upstairs, walking downstairs, standing, sitting and lying. 
+
+I would like to use hierarchical clustering to accurately identify what the action completed was based on the data.
+
+The complete data set and more information about it can be found at the link below.  
+http://archive.ics.uci.edu/ml/datasets/Smartphone-Based+Recognition+of+Human+Activities+and+Postural+Transitions
+
+
+## Set up data to work with
+
+First, the data should be transformed to make activity a factor variable
+```{r transform, echo = TRUE}
+load("samsungData.rda")
+samsungData <-transform(samsungData, activity =factor(activity))
+```
+Now, we can create a subset of data with only the first subject, to make it easier to work with. 
+```{r subset, echo = TRUE}
+sub1 <-subset(samsungData, subject==1)
+```
+
+This data has hundreds of features, so to start I will try to use average acceleration as a way to cluster the data
+
+```{r average cluster, echo = TRUE}
+distancebyaverage <-dist(sub1[,1:3])
+hclustering <-hclust(distancebyaverage)
+```
+## Graphing the cluster data
+
+To graph cluster data, I will use a a modified version of the hclust() function from John Hopkins University class "Exploratory Data Analysis".
+
+```{r myplclust, echo = TRUE}
+myplclust <-function(hclust, lab = hclust$labels,lab.col
+                     =rep(1,length(hclust$labels)), hang = 0.1, ...) 
+ {y <-rep(hclust$height, 2)
+  x <-as.numeric(hclust$merge)
+  y <- y[which(x<0)]
+  x <- x[which(x<0)]
+  x <-abs(x)
+  y <- y[order(x)]
+  x <- x[order(x)]
+  plot(hclust, labels = FALSE, hang = hang, ...)
+  text(x = x, y = y[hclust$order]-(max(hclust$height)*hang), 
+       labels = lab[hclust$order],col = lab.col[hclust$order], srt = 90, 
+       adj =c(1, 0.5), xpd = NA, ...)}
+```
+## Graphing the data {#slideID1 .smaller} 
+<style> 
+  #slideID1 > p { 
+    margin-top: -50px; 
+  } 
+</style>
+```{r average graph, echo=FALSE}
+myplclust(hclustering, lab.col =unclass(sub1$activity))
+```
+&nbsp;  
+Colors are very mixed so this approach doesn't work as well. Possibly to improve results we could use max acceleration instead of average.
+
+## Graphing the cluster based on max accelration {#slideID2 .smaller} 
+<style> 
+  #slideID2 > p { 
+    margin-top: -50px; 
+  } 
+</style>
+```{r max graph, echo=FALSE}
+distancebymax <-dist(sub1[,10:12]) 
+hclustering <-hclust(distancebymax)
+myplclust(hclustering, lab.col =unclass(sub1$activity))
+```
+&nbsp;  
+This cluster looks much better but some of the motile and all non-motile activities are still mixed. Next improvement strategy is to use SVD.
+
+## Singular Value Decomposition
+
+SVD splits the matrix into a product of three matrices, where A=u*d*v  
+- A is the original matrix  
+- d is a vector containing the singular values of the original matrix  
+- u is a matrix whose columns contain the left singular vectors of the original matrix  
+- v is a matrix whose columns contain the right singular vectors of the original matrix   
+
+The decomposed output of SVD provides great insight into variance and pattern distribution in the original matrix.
+
+
+##  Graphing the cluster from SVD data {#slideID} 
+<style> 
+  #slideID > p { 
+    margin-top: -50px; 
+  } 
+</style>
+```{r svd plot,echo= FALSE}
+svdnonames <- svd(scale(sub1[, -c(562, 563)]))#delete non-numeric variables
+maxContributer <- which.max(svdnonames$v[, 2])#finds which feature correlates with most variations
+##names(samsungData[maxContributer]) #shows maximum contributing feature
+distancebysvd <-dist(sub1[,c(10:12,maxContributer)]) #finds distance between the max value of acceleration in x,y and z directions for each data point
+hclusteringsvd <-hclust(distancebysvd)#create hclust data 
+myplclust(hclusteringsvd, lab.col =unclass(sub1$activity))
+
+```  
+  &nbsp;  
+This cluster provides a great separation of the 3 moving activities, but all non-moving activities are still mixed together. Next we can try to use k-means clustering. 
+
+## K-means Clustering with 6 groups
+```{r kmean6, echo=TRUE}
+kmean6 <- kmeans(sub1[, -c(562, 563)], centers = 6, nstart = 100)
+table(kmean6$cluster,sub1$activity)
+```
+In the above table it is clear that the 3 motile activities are well distinguished but the non-motile activities are all mixed together. 
+
+## K-means cluster results compared to the actual data {.smaller #slideID4} 
+<style> 
+  #slideID4 > p { 
+    margin-top: -50px; 
+  } 
+</style>
+K-means table:
+```{r kmean table}
+table(kmean6$cluster,sub1$activity)
+```
+  &nbsp;  
+Actual data table:
+```{r data table}
+table(sub1$activity)
+```
+  &nbsp; 
+  &nbsp; 
+  &nbsp;  
+We see that the motile activities are exactly on point. Let's try graphing this cluster for a better visualization.
+
+## K-means Plot With 6 Groups {.smaller #slideID5} 
+<style> 
+  #slideID5 > p { 
+    margin-top: -50px; 
+  } 
+</style>
+```{r kmean plot, message=FALSE, warning=FALSE}
+library("factoextra")
+fviz_cluster(kmean6, sub1[, -c(562, 563)])
+```
+  &nbsp;  
+  We can see that the algorithm is still struggling to distinguish the non-motile activities from each other. We can try K-means again but with only 4 groups, so that all non-motile data is just bundled together.
+  
+  
+## K-means Clusterin with 4 Groups{.smaller #slideID6} 
+<style> 
+  #slideID6 > p { 
+    margin-top: -50px; 
+  } 
+</style>
+```{r kmean4 }
+kmean4 <- kmeans(sub1[, -c(562, 563)], centers = 4, nstart = 100)
+fviz_cluster(kmean4, sub1[, -c(562, 563)])
+```
+ &nbsp;  
+ The data looks much better with only 4 groups, where all non-motile activities are in 1 group.
+ 
+## Dendogram with 4 groups {.smaller #slideID7} 
+<style> 
+  #slideID7 > p { 
+    margin-top: -50px; 
+  } 
+</style>
+ ```{r clust4  }
+ clust4 <- hcut(sub1[, -c(562, 563)], k = 4, stand = TRUE)
+fviz_dend(clust4, rect = TRUE, cex = 0.5)
+```
+ &nbsp;  
+The dendogram using Hierarchical Multiple Factor Analysis also shows a very clear visualization of the data. As a future direction for this project, we could try and find other machine learning approaches to classify the non-moving data as well.
